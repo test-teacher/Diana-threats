@@ -34,51 +34,62 @@ class DianaThreats {
         this.renderThreats();
 
         // Инициализация Firebase
-        await this.initFirebase();
+        this.initFirebase();
     }
 
-    async initFirebase() {
+    initFirebase() {
+        this.updateSyncStatus('syncing');
+
         try {
-            this.updateSyncStatus('syncing');
-
             // Инициализация Firebase
-            if (!firebase.apps.length) {
-                firebase.initializeApp(firebaseConfig);
-            }
-
+            firebase.initializeApp(firebaseConfig);
             this.db = firebase.database();
 
-            // Анонимная авторизация (нужна для test mode)
-            await firebase.auth().signInAnonymously();
-
-            // Слушаем состояние подключения
-            this.db.ref('.info/connected').on('value', (snap) => {
-                this.connected = snap.val() === true;
-                this.updateSyncStatus(this.connected ? 'connected' : 'error');
-            });
-
-            // Слушаем угрозы
-            this.db.ref('threats').on('value', (snapshot) => {
-                const data = snapshot.val();
-                if (data) {
-                    this.threats = Object.keys(data).map(key => ({
-                        id: key,
-                        ...data[key]
-                    })).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-                } else {
-                    this.threats = [];
+            // Слушаем состояние подключения с таймаутом
+            const connectionTimeout = setTimeout(() => {
+                if (!this.connected) {
+                    console.error('Таймаут подключения к Firebase');
+                    this.updateSyncStatus('error');
                 }
-                this.saveLocalThreats();
-                this.renderThreats();
-            }, (error) => {
-                console.error('Ошибка чтения:', error);
-                this.updateSyncStatus('error');
+            }, 10000);
+
+            this.db.ref('.info/connected').on('value', (snap) => {
+                clearTimeout(connectionTimeout);
+                this.connected = snap.val() === true;
+                console.log('Подключение к Firebase:', this.connected);
+                this.updateSyncStatus(this.connected ? 'connected' : 'error');
+                
+                if (this.connected) {
+                    // Загружаем угрозы при подключении
+                    this.loadThreatsFromFirebase();
+                }
             });
 
         } catch (error) {
-            console.error('Ошибка Firebase:', error);
+            console.error('Ошибка инициализации Firebase:', error);
             this.updateSyncStatus('error');
         }
+    }
+
+    loadThreatsFromFirebase() {
+        this.db.ref('threats').on('value', (snapshot) => {
+            const data = snapshot.val();
+            console.log('Данные из Firebase:', data);
+            
+            if (data) {
+                this.threats = Object.keys(data).map(key => ({
+                    id: key,
+                    ...data[key]
+                })).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+            } else {
+                this.threats = [];
+            }
+            this.saveLocalThreats();
+            this.renderThreats();
+        }, (error) => {
+            console.error('Ошибка чтения из Firebase:', error);
+            this.updateSyncStatus('error');
+        });
     }
 
     loadLocalThreats() {
@@ -103,7 +114,7 @@ class DianaThreats {
         switch(status) {
             case 'connected':
                 statusEl.classList.add('connected');
-                textEl.textContent = 'Синхронизировано';
+                textEl.textContent = 'Онлайн';
                 break;
             case 'syncing':
                 statusEl.classList.add('syncing');
@@ -111,7 +122,7 @@ class DianaThreats {
                 break;
             case 'error':
                 statusEl.classList.add('error');
-                textEl.textContent = 'Нет связи';
+                textEl.textContent = 'Офлайн';
                 break;
             default:
                 textEl.textContent = 'Подключение...';
@@ -138,13 +149,15 @@ class DianaThreats {
         };
 
         btn.disabled = true;
-        this.updateSyncStatus('syncing');
 
         try {
-            if (this.db) {
+            if (this.db && this.connected) {
+                console.log('Сохранение в Firebase...');
                 await this.db.ref('threats').push(threat);
+                console.log('Сохранено в Firebase');
             } else {
-                // Fallback
+                // Fallback - локальное сохранение
+                console.log('Сохранение локально (нет подключения)');
                 threat.id = Date.now().toString();
                 this.threats.unshift(threat);
                 this.saveLocalThreats();
@@ -153,13 +166,9 @@ class DianaThreats {
             
             textInput.value = '';
             this.showSuccessAnimation();
-            
-            if (this.connected) {
-                this.updateSyncStatus('connected');
-            }
+
         } catch (error) {
             console.error('Ошибка сохранения:', error);
-            this.updateSyncStatus('error');
             
             // Fallback
             threat.id = Date.now().toString();
@@ -177,7 +186,7 @@ class DianaThreats {
         }
 
         try {
-            if (this.db) {
+            if (this.db && this.connected) {
                 await this.db.ref(`threats/${id}`).remove();
             } else {
                 this.threats = this.threats.filter(t => t.id !== id);

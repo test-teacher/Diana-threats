@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Угрозы от Дианы 😈</title>
     <link rel="stylesheet" href="style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -12,13 +12,19 @@
 <body>
     <div class="container">
         <header>
-            <h1>🔥 Угрозы от Дианы 🔥</h1>
-            <p class="subtitle">Коллекция угроз для потомков</p>
+            <div class="header-content">
+                <h1>🔥 Угрозы от Дианы 🔥</h1>
+                <p class="subtitle">Коллекция шуточных угроз для потомков</p>
+            </div>
+            <div class="sync-status" id="syncStatus">
+                <span class="sync-dot"></span>
+                <span class="sync-text">Синхронизация...</span>
+            </div>
         </header>
 
         <main>
             <section class="add-threat-section">
-                <h2>📝 Добавить новую угрозу в адрес KGA</h2>
+                <h2>📝 Добавить новую угрозу</h2>
                 <form id="threatForm">
                     <div class="form-group">
                         <label for="threatDate">📅 Дата угрозы:</label>
@@ -28,15 +34,16 @@
                         <label for="threatText">💀 Текст угрозы:</label>
                         <textarea id="threatText" placeholder="Например: 'Если ты не купишь мне кофе, я расскажу всем твои секреты!'" required></textarea>
                     </div>
-                    <button type="submit" class="btn-add">
-                        <span>➕</span> Добавить угрозу адресованную KGA
+                    <button type="submit" class="btn-add" id="btnAdd">
+                        <span class="btn-icon">➕</span>
+                        <span class="btn-text">Добавить угрозу</span>
                     </button>
                 </form>
             </section>
 
             <section class="threats-section">
                 <div class="section-header">
-                    <h2>🎯 Коллекция угроз KGA</h2>
+                    <h2>🎯 Коллекция угроз</h2>
                     <span class="threat-count" id="threatCount">0 угроз</span>
                 </div>
                 <div class="threats-list" id="threatsList">
@@ -51,10 +58,32 @@
         </main>
 
         <footer>
-            <p>Made KGA with 💜 for funny memories with Diana</p>
+            <p>Made with 💜 for funny memories with Diana</p>
         </footer>
     </div>
 
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+    <script type="module">
+  // Import the functions you need from the SDKs you need
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+  // TODO: Add SDKs for Firebase products that you want to use
+  // https://firebase.google.com/docs/web/setup#available-libraries
+
+  // Your web app's Firebase configuration
+  const firebaseConfig = {
+    apiKey: "AIzaSyCOw2AjQmS7XmH2vObkfpa-HWUIg1qc7Hk",
+    authDomain: "diana-threats.firebaseapp.com",
+    projectId: "diana-threats",
+    storageBucket: "diana-threats.firebasestorage.app",
+    messagingSenderId: "857129102539",
+    appId: "1:857129102539:web:104f1787511bf618f47f4e"
+  };
+
+  // Initialize Firebase
+  const app = initializeApp(firebaseConfig);
+</script>
     <script src="app.js"></script>
 </body>
 </html>

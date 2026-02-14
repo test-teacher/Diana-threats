@@ -1,3 +1,5 @@
+// Угрозы от Дианы - App Logic with Firebase Sync
+
 const firebaseConfig = {
     apiKey: "AIzaSyCOw2AjQmS7XmH2vObkfpa-HWUIg1qc7Hk",
     authDomain: "diana-threats.firebaseapp.com",
@@ -12,14 +14,11 @@ class DianaThreats {
     constructor() {
         this.threats = [];
         this.db = null;
-        this.isOnline = false;
+        this.connected = false;
         this.init();
     }
 
     async init() {
-        // Показать loading
-        this.showLoading();
-
         // Установить сегодняшнюю дату по умолчанию
         const today = new Date().toISOString().split('T')[0];
         document.getElementById('threatDate').value = today;
@@ -30,25 +29,17 @@ class DianaThreats {
             this.addThreat();
         });
 
-        // Инициализация Firebase
-        await this.initFirebase();
-
-        // Загрузить локальные данные (пока Firebase грузится)
+        // Загрузить локальные данные сразу
         this.threats = this.loadLocalThreats();
         this.renderThreats();
 
-        // Скрыть loading
-        this.hideLoading();
+        // Инициализация Firebase
+        await this.initFirebase();
     }
 
     async initFirebase() {
         try {
-            // Проверка, что Firebase config заполнен
-            if (firebaseConfig.apiKey === "YOUR_API_KEY") {
-                console.warn('Firebase не настроен. Используется локальное хранилище.');
-                this.updateSyncStatus('local');
-                return;
-            }
+            this.updateSyncStatus('syncing');
 
             // Инициализация Firebase
             if (!firebase.apps.length) {
@@ -56,12 +47,33 @@ class DianaThreats {
             }
 
             this.db = firebase.database();
-            
-            // Проверка подключения
-            await this.testConnection();
 
-            // Слушать изменения в реальном времени
-            this.listenForChanges();
+            // Анонимная авторизация (нужна для test mode)
+            await firebase.auth().signInAnonymously();
+
+            // Слушаем состояние подключения
+            this.db.ref('.info/connected').on('value', (snap) => {
+                this.connected = snap.val() === true;
+                this.updateSyncStatus(this.connected ? 'connected' : 'error');
+            });
+
+            // Слушаем угрозы
+            this.db.ref('threats').on('value', (snapshot) => {
+                const data = snapshot.val();
+                if (data) {
+                    this.threats = Object.keys(data).map(key => ({
+                        id: key,
+                        ...data[key]
+                    })).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+                } else {
+                    this.threats = [];
+                }
+                this.saveLocalThreats();
+                this.renderThreats();
+            }, (error) => {
+                console.error('Ошибка чтения:', error);
+                this.updateSyncStatus('error');
+            });
 
         } catch (error) {
             console.error('Ошибка Firebase:', error);
@@ -69,61 +81,13 @@ class DianaThreats {
         }
     }
 
-    async testConnection() {
-        return new Promise((resolve) => {
-            const connectedRef = this.db.ref('.info/connected');
-            connectedRef.on('value', (snap) => {
-                if (snap.val() === true) {
-                    this.isOnline = true;
-                    this.updateSyncStatus('connected');
-                    resolve(true);
-                } else {
-                    this.isOnline = false;
-                    this.updateSyncStatus('error');
-                    resolve(false);
-                }
-            });
-        });
-    }
-
-    listenForChanges() {
-        if (!this.db) return;
-
-        const threatsRef = this.db.ref('threats');
-        
-        // Слушаем изменения
-        threatsRef.on('value', (snapshot) => {
-            const data = snapshot.val();
-            if (data) {
-                // Преобразуем объект в массив и сортируем по дате
-                this.threats = Object.keys(data).map(key => ({
-                    id: key,
-                    ...data[key]
-                })).sort((a, b) => {
-                    // Сортировка по дате создания (новые первыми)
-                    return new Date(b.createdAt) - new Date(a.createdAt);
-                });
-            } else {
-                this.threats = [];
-            }
-            
-            // Сохранить локально как резерв
-            this.saveLocalThreats();
-            
-            // Обновить отображение
-            this.renderThreats();
-        });
-
-        // Обработка ошибок
-        threatsRef.on('error', (error) => {
-            console.error('Ошибка синхронизации:', error);
-            this.updateSyncStatus('error');
-        });
-    }
-
     loadLocalThreats() {
-        const stored = localStorage.getItem('dianaThreats');
-        return stored ? JSON.parse(stored) : [];
+        try {
+            const stored = localStorage.getItem('dianaThreats');
+            return stored ? JSON.parse(stored) : [];
+        } catch {
+            return [];
+        }
     }
 
     saveLocalThreats() {
@@ -143,15 +107,11 @@ class DianaThreats {
                 break;
             case 'syncing':
                 statusEl.classList.add('syncing');
-                textEl.textContent = 'Синхронизация...';
+                textEl.textContent = 'Подключение...';
                 break;
             case 'error':
                 statusEl.classList.add('error');
                 textEl.textContent = 'Нет связи';
-                break;
-            case 'local':
-                statusEl.classList.add('error');
-                textEl.textContent = 'Только локально';
                 break;
             default:
                 textEl.textContent = 'Подключение...';
@@ -177,38 +137,32 @@ class DianaThreats {
             createdAt: new Date().toISOString()
         };
 
-        // Показать синхронизацию
+        btn.disabled = true;
         this.updateSyncStatus('syncing');
 
-        // Блокируем кнопку
-        btn.disabled = true;
-
         try {
-            if (this.db && this.isOnline) {
-                // Сохранить в Firebase
-                const newRef = this.db.ref('threats').push();
-                await newRef.set(threat);
+            if (this.db) {
+                await this.db.ref('threats').push(threat);
             } else {
-                // Fallback - локальное сохранение
-                threat.id = Date.now();
+                // Fallback
+                threat.id = Date.now().toString();
                 this.threats.unshift(threat);
                 this.saveLocalThreats();
                 this.renderThreats();
             }
-
-            // Очистить форму
-            textInput.value = '';
             
-            // Показать успех
+            textInput.value = '';
             this.showSuccessAnimation();
-            this.updateSyncStatus('connected');
-
+            
+            if (this.connected) {
+                this.updateSyncStatus('connected');
+            }
         } catch (error) {
             console.error('Ошибка сохранения:', error);
             this.updateSyncStatus('error');
             
-            // Сохранить локально как fallback
-            threat.id = Date.now();
+            // Fallback
+            threat.id = Date.now().toString();
             this.threats.unshift(threat);
             this.saveLocalThreats();
             this.renderThreats();
@@ -222,22 +176,16 @@ class DianaThreats {
             return;
         }
 
-        this.updateSyncStatus('syncing');
-
         try {
-            if (this.db && this.isOnline) {
+            if (this.db) {
                 await this.db.ref(`threats/${id}`).remove();
             } else {
                 this.threats = this.threats.filter(t => t.id !== id);
                 this.saveLocalThreats();
                 this.renderThreats();
             }
-            this.updateSyncStatus('connected');
         } catch (error) {
             console.error('Ошибка удаления:', error);
-            this.updateSyncStatus('error');
-            
-            // Удалить локально
             this.threats = this.threats.filter(t => t.id !== id);
             this.saveLocalThreats();
             this.renderThreats();
@@ -246,27 +194,20 @@ class DianaThreats {
 
     formatDate(dateStr) {
         const date = new Date(dateStr);
-        const options = { 
+        return date.toLocaleDateString('ru-RU', { 
             day: 'numeric', 
             month: 'long', 
             year: 'numeric' 
-        };
-        return date.toLocaleDateString('ru-RU', options);
+        });
     }
 
     getThreatWord(count) {
         const lastTwo = count % 100;
         const lastOne = count % 10;
 
-        if (lastTwo >= 11 && lastTwo <= 19) {
-            return 'угроз';
-        }
-        if (lastOne === 1) {
-            return 'угроза';
-        }
-        if (lastOne >= 2 && lastOne <= 4) {
-            return 'угрозы';
-        }
+        if (lastTwo >= 11 && lastTwo <= 19) return 'угроз';
+        if (lastOne === 1) return 'угроза';
+        if (lastOne >= 2 && lastOne <= 4) return 'угрозы';
         return 'угроз';
     }
 
@@ -281,11 +222,9 @@ class DianaThreats {
         const emptyState = document.getElementById('emptyState');
         const countEl = document.getElementById('threatCount');
 
-        // Обновить счётчик
         const count = this.threats.length;
         countEl.textContent = `${count} ${this.getThreatWord(count)}`;
 
-        // Показать/скрыть пустое состояние
         if (count === 0) {
             emptyState.classList.add('show');
             listEl.innerHTML = '';
@@ -294,7 +233,6 @@ class DianaThreats {
 
         emptyState.classList.remove('show');
 
-        // Рендеринг угроз
         listEl.innerHTML = this.threats.map(threat => `
             <div class="threat-card" data-id="${threat.id}">
                 <div class="threat-header">
@@ -324,35 +262,9 @@ class DianaThreats {
 
     shakeElement(element) {
         element.style.animation = 'none';
-        element.offsetHeight; // Trigger reflow
+        element.offsetHeight;
         element.style.animation = 'shake 0.5s ease';
-        
-        setTimeout(() => {
-            element.style.animation = '';
-        }, 500);
-    }
-
-    showLoading() {
-        // Создать overlay если его нет
-        if (!document.querySelector('.loading-overlay')) {
-            const overlay = document.createElement('div');
-            overlay.className = 'loading-overlay';
-            overlay.innerHTML = `
-                <div class="loading-spinner">
-                    <div class="spinner"></div>
-                    <p>Загрузка...</p>
-                </div>
-            `;
-            document.body.appendChild(overlay);
-        }
-    }
-
-    hideLoading() {
-        const overlay = document.querySelector('.loading-overlay');
-        if (overlay) {
-            overlay.classList.add('hidden');
-            setTimeout(() => overlay.remove(), 300);
-        }
+        setTimeout(() => element.style.animation = '', 500);
     }
 }
 
@@ -367,5 +279,5 @@ style.textContent = `
 `;
 document.head.appendChild(style);
 
-// Инициализация приложения
+// Инициализация
 const app = new DianaThreats();

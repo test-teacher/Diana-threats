@@ -1,4 +1,4 @@
-// Угрозы от Дианы - App Logic with Firebase Sync
+// Угрозы и Обиды от Дианы - App Logic with Firebase Sync
 
 const firebaseConfig = {
     apiKey: "AIzaSyCOw2AjQmS7XmH2vObkfpa-HWUIg1qc7Hk",
@@ -10,11 +10,13 @@ const firebaseConfig = {
     appId: "1:857129102539:web:104f1787511bf618f47f4e"
 };
 
-class DianaThreats {
+class DianaMoodTracker {
     constructor() {
         this.threats = [];
+        this.offenses = [];
         this.db = null;
         this.connected = false;
+        this.currentTab = 'threats';
         this.init();
     }
 
@@ -22,30 +24,54 @@ class DianaThreats {
         // Установить сегодняшнюю дату по умолчанию
         const today = new Date().toISOString().split('T')[0];
         document.getElementById('threatDate').value = today;
+        document.getElementById('offenseDate').value = today;
 
-        // Привязать события
+        // Привязать события форм
         document.getElementById('threatForm').addEventListener('submit', (e) => {
             e.preventDefault();
             this.addThreat();
         });
 
-        // Загрузить локальные данные сразу
-        this.threats = this.loadLocalThreats();
+        document.getElementById('offenseForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.addOffense();
+        });
+
+        // Привязать события вкладок
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => this.switchTab(tab.dataset.tab));
+        });
+
+        // Загрузить локальные данные
+        this.threats = this.loadLocalData('threats');
+        this.offenses = this.loadLocalData('offenses');
         this.renderThreats();
+        this.renderOffenses();
 
         // Инициализация Firebase
         this.initFirebase();
+    }
+
+    switchTab(tabName) {
+        this.currentTab = tabName;
+        
+        // Обновить вкладки
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.classList.toggle('active', tab.dataset.tab === tabName);
+        });
+
+        // Показать нужную секцию
+        document.getElementById('threats-section').classList.toggle('hidden', tabName !== 'threats');
+        document.getElementById('offenses-section').classList.toggle('hidden', tabName !== 'offenses');
     }
 
     initFirebase() {
         this.updateSyncStatus('syncing');
 
         try {
-            // Инициализация Firebase
             firebase.initializeApp(firebaseConfig);
             this.db = firebase.database();
 
-            // Слушаем состояние подключения с таймаутом
             const connectionTimeout = setTimeout(() => {
                 if (!this.connected) {
                     console.error('Таймаут подключения к Firebase');
@@ -60,8 +86,8 @@ class DianaThreats {
                 this.updateSyncStatus(this.connected ? 'connected' : 'error');
                 
                 if (this.connected) {
-                    // Загружаем угрозы при подключении
-                    this.loadThreatsFromFirebase();
+                    this.loadFromFirebase('threats');
+                    this.loadFromFirebase('offenses');
                 }
             });
 
@@ -71,38 +97,41 @@ class DianaThreats {
         }
     }
 
-    loadThreatsFromFirebase() {
-        this.db.ref('threats').on('value', (snapshot) => {
+    loadFromFirebase(type) {
+        this.db.ref(type).on('value', (snapshot) => {
             const data = snapshot.val();
-            console.log('Данные из Firebase:', data);
+            console.log(`Данные ${type} из Firebase:`, data);
             
-            if (data) {
-                this.threats = Object.keys(data).map(key => ({
-                    id: key,
-                    ...data[key]
-                })).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+            const items = data ? Object.keys(data).map(key => ({
+                id: key,
+                ...data[key]
+            })).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)) : [];
+
+            if (type === 'threats') {
+                this.threats = items;
+                this.saveLocalData('threats', this.threats);
+                this.renderThreats();
             } else {
-                this.threats = [];
+                this.offenses = items;
+                this.saveLocalData('offenses', this.offenses);
+                this.renderOffenses();
             }
-            this.saveLocalThreats();
-            this.renderThreats();
         }, (error) => {
-            console.error('Ошибка чтения из Firebase:', error);
-            this.updateSyncStatus('error');
+            console.error(`Ошибка чтения ${type}:`, error);
         });
     }
 
-    loadLocalThreats() {
+    loadLocalData(type) {
         try {
-            const stored = localStorage.getItem('dianaThreats');
+            const stored = localStorage.getItem(`diana_${type}`);
             return stored ? JSON.parse(stored) : [];
         } catch {
             return [];
         }
     }
 
-    saveLocalThreats() {
-        localStorage.setItem('dianaThreats', JSON.stringify(this.threats));
+    saveLocalData(type, data) {
+        localStorage.setItem(`diana_${type}`, JSON.stringify(data));
     }
 
     updateSyncStatus(status) {
@@ -129,10 +158,11 @@ class DianaThreats {
         }
     }
 
+    // === УГРОЗЫ ===
     async addThreat() {
         const dateInput = document.getElementById('threatDate');
         const textInput = document.getElementById('threatText');
-        const btn = document.getElementById('btnAdd');
+        const btn = document.getElementById('btnAddThreat');
 
         const date = dateInput.value;
         const text = textInput.value.trim();
@@ -142,7 +172,7 @@ class DianaThreats {
             return;
         }
 
-        const threat = {
+        const item = {
             date: date,
             text: text,
             createdAt: new Date().toISOString()
@@ -152,28 +182,22 @@ class DianaThreats {
 
         try {
             if (this.db && this.connected) {
-                console.log('Сохранение в Firebase...');
-                await this.db.ref('threats').push(threat);
-                console.log('Сохранено в Firebase');
+                await this.db.ref('threats').push(item);
             } else {
-                // Fallback - локальное сохранение
-                console.log('Сохранение локально (нет подключения)');
-                threat.id = Date.now().toString();
-                this.threats.unshift(threat);
-                this.saveLocalThreats();
+                item.id = Date.now().toString();
+                this.threats.unshift(item);
+                this.saveLocalData('threats', this.threats);
                 this.renderThreats();
             }
             
             textInput.value = '';
-            this.showSuccessAnimation();
+            this.showSuccessAnimation(btn);
 
         } catch (error) {
-            console.error('Ошибка сохранения:', error);
-            
-            // Fallback
-            threat.id = Date.now().toString();
-            this.threats.unshift(threat);
-            this.saveLocalThreats();
+            console.error('Ошибка сохранения угрозы:', error);
+            item.id = Date.now().toString();
+            this.threats.unshift(item);
+            this.saveLocalData('threats', this.threats);
             this.renderThreats();
         }
 
@@ -181,58 +205,31 @@ class DianaThreats {
     }
 
     async deleteThreat(id) {
-        if (!confirm('Точно удалить эту угрозу? Она была такой милой... 😊')) {
-            return;
-        }
+        if (!confirm('Точно удалить эту угрозу? 😊')) return;
 
         try {
             if (this.db && this.connected) {
                 await this.db.ref(`threats/${id}`).remove();
             } else {
                 this.threats = this.threats.filter(t => t.id !== id);
-                this.saveLocalThreats();
+                this.saveLocalData('threats', this.threats);
                 this.renderThreats();
             }
         } catch (error) {
-            console.error('Ошибка удаления:', error);
+            console.error('Ошибка удаления угрозы:', error);
             this.threats = this.threats.filter(t => t.id !== id);
-            this.saveLocalThreats();
+            this.saveLocalData('threats', this.threats);
             this.renderThreats();
         }
     }
 
-    formatDate(dateStr) {
-        const date = new Date(dateStr);
-        return date.toLocaleDateString('ru-RU', { 
-            day: 'numeric', 
-            month: 'long', 
-            year: 'numeric' 
-        });
-    }
-
-    getThreatWord(count) {
-        const lastTwo = count % 100;
-        const lastOne = count % 10;
-
-        if (lastTwo >= 11 && lastTwo <= 19) return 'угроз';
-        if (lastOne === 1) return 'угроза';
-        if (lastOne >= 2 && lastOne <= 4) return 'угрозы';
-        return 'угроз';
-    }
-
-    escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
-
     renderThreats() {
         const listEl = document.getElementById('threatsList');
-        const emptyState = document.getElementById('emptyState');
+        const emptyState = document.getElementById('threatsEmpty');
         const countEl = document.getElementById('threatCount');
 
         const count = this.threats.length;
-        countEl.textContent = `${count} ${this.getThreatWord(count)}`;
+        countEl.textContent = `${count} ${this.getWord(count, 'угроза')}`;
 
         if (count === 0) {
             emptyState.classList.add('show');
@@ -242,21 +239,142 @@ class DianaThreats {
 
         emptyState.classList.remove('show');
 
-        listEl.innerHTML = this.threats.map(threat => `
-            <div class="threat-card" data-id="${threat.id}">
-                <div class="threat-header">
-                    <span class="threat-date">📅 ${this.formatDate(threat.date)}</span>
-                    <button class="btn-delete" onclick="app.deleteThreat('${threat.id}')" title="Удалить">
-                        🗑️
-                    </button>
+        listEl.innerHTML = this.threats.map(item => `
+            <div class="item-card threat" data-id="${item.id}">
+                <div class="item-header">
+                    <span class="item-date">📅 ${this.formatDate(item.date)}</span>
+                    <button class="btn-delete" onclick="app.deleteThreat('${item.id}')" title="Удалить">🗑️</button>
                 </div>
-                <div class="threat-text">"${this.escapeHtml(threat.text)}"</div>
+                <div class="item-text">"${this.escapeHtml(item.text)}"</div>
             </div>
         `).join('');
     }
 
-    showSuccessAnimation() {
-        const btn = document.getElementById('btnAdd');
+    // === ОБИДЫ ===
+    async addOffense() {
+        const dateInput = document.getElementById('offenseDate');
+        const textInput = document.getElementById('offenseText');
+        const btn = document.getElementById('btnAddOffense');
+
+        const date = dateInput.value;
+        const text = textInput.value.trim();
+
+        if (!date || !text) {
+            this.shakeElement(textInput);
+            return;
+        }
+
+        const item = {
+            date: date,
+            text: text,
+            createdAt: new Date().toISOString()
+        };
+
+        btn.disabled = true;
+
+        try {
+            if (this.db && this.connected) {
+                await this.db.ref('offenses').push(item);
+            } else {
+                item.id = Date.now().toString();
+                this.offenses.unshift(item);
+                this.saveLocalData('offenses', this.offenses);
+                this.renderOffenses();
+            }
+            
+            textInput.value = '';
+            this.showSuccessAnimation(btn);
+
+        } catch (error) {
+            console.error('Ошибка сохранения обиды:', error);
+            item.id = Date.now().toString();
+            this.offenses.unshift(item);
+            this.saveLocalData('offenses', this.offenses);
+            this.renderOffenses();
+        }
+
+        btn.disabled = false;
+    }
+
+    async deleteOffense(id) {
+        if (!confirm('Точно удалить эту обиду? 😊')) return;
+
+        try {
+            if (this.db && this.connected) {
+                await this.db.ref(`offenses/${id}`).remove();
+            } else {
+                this.offenses = this.offenses.filter(t => t.id !== id);
+                this.saveLocalData('offenses', this.offenses);
+                this.renderOffenses();
+            }
+        } catch (error) {
+            console.error('Ошибка удаления обиды:', error);
+            this.offenses = this.offenses.filter(t => t.id !== id);
+            this.saveLocalData('offenses', this.offenses);
+            this.renderOffenses();
+        }
+    }
+
+    renderOffenses() {
+        const listEl = document.getElementById('offensesList');
+        const emptyState = document.getElementById('offensesEmpty');
+        const countEl = document.getElementById('offenseCount');
+
+        const count = this.offenses.length;
+        countEl.textContent = `${count} ${this.getWord(count, 'обида')}`;
+
+        if (count === 0) {
+            emptyState.classList.add('show');
+            listEl.innerHTML = '';
+            return;
+        }
+
+        emptyState.classList.remove('show');
+
+        listEl.innerHTML = this.offenses.map(item => `
+            <div class="item-card offense" data-id="${item.id}">
+                <div class="item-header">
+                    <span class="item-date">📅 ${this.formatDate(item.date)}</span>
+                    <button class="btn-delete" onclick="app.deleteOffense('${item.id}')" title="Удалить">🗑️</button>
+                </div>
+                <div class="item-text">"${this.escapeHtml(item.text)}"</div>
+            </div>
+        `).join('');
+    }
+
+    // === УТИЛИТЫ ===
+    formatDate(dateStr) {
+        const date = new Date(dateStr);
+        return date.toLocaleDateString('ru-RU', { 
+            day: 'numeric', 
+            month: 'long', 
+            year: 'numeric' 
+        });
+    }
+
+    getWord(count, base) {
+        const forms = {
+            'угроза': ['угроза', 'угрозы', 'угроз'],
+            'обида': ['обида', 'обиды', 'обид']
+        };
+        
+        const f = forms[base] || [base, base, base];
+        const lastTwo = count % 100;
+        const lastOne = count % 10;
+
+        if (lastTwo >= 11 && lastTwo <= 19) return f[2];
+        if (lastOne === 1) return f[0];
+        if (lastOne >= 2 && lastOne <= 4) return f[1];
+        return f[2];
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    showSuccessAnimation(btn) {
         const textEl = btn.querySelector('.btn-text');
         const originalText = textEl.textContent;
         
@@ -277,7 +395,7 @@ class DianaThreats {
     }
 }
 
-// Добавить анимацию shake
+// Shake animation
 const style = document.createElement('style');
 style.textContent = `
     @keyframes shake {
@@ -289,4 +407,4 @@ style.textContent = `
 document.head.appendChild(style);
 
 // Инициализация
-const app = new DianaThreats();
+const app = new DianaMoodTracker();

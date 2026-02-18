@@ -1,4 +1,4 @@
-// Угрозы и Обиды от Дианы - App Logic with Firebase Sync
+// Диана и её настроение - App Logic with Firebase Sync
 
 const firebaseConfig = {
     apiKey: "AIzaSyCOw2AjQmS7XmH2vObkfpa-HWUIg1qc7Hk",
@@ -14,6 +14,7 @@ class DianaMoodTracker {
     constructor() {
         this.threats = [];
         this.offenses = [];
+        this.nerves = [];
         this.db = null;
         this.connected = false;
         this.currentTab = 'threats';
@@ -25,6 +26,7 @@ class DianaMoodTracker {
         const today = new Date().toISOString().split('T')[0];
         document.getElementById('threatDate').value = today;
         document.getElementById('offenseDate').value = today;
+        document.getElementById('nervesDate').value = today;
 
         // Привязать события форм
         document.getElementById('threatForm').addEventListener('submit', (e) => {
@@ -37,6 +39,11 @@ class DianaMoodTracker {
             this.addOffense();
         });
 
+        document.getElementById('nervesForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.addNerves();
+        });
+
         // Привязать события вкладок
         document.querySelectorAll('.tab').forEach(tab => {
             tab.addEventListener('click', () => this.switchTab(tab.dataset.tab));
@@ -45,8 +52,10 @@ class DianaMoodTracker {
         // Загрузить локальные данные
         this.threats = this.loadLocalData('threats');
         this.offenses = this.loadLocalData('offenses');
+        this.nerves = this.loadLocalData('nerves');
         this.renderThreats();
         this.renderOffenses();
+        this.renderNerves();
 
         // Инициализация Firebase
         this.initFirebase();
@@ -63,6 +72,7 @@ class DianaMoodTracker {
         // Показать нужную секцию
         document.getElementById('threats-section').classList.toggle('hidden', tabName !== 'threats');
         document.getElementById('offenses-section').classList.toggle('hidden', tabName !== 'offenses');
+        document.getElementById('nerves-section').classList.toggle('hidden', tabName !== 'nerves');
     }
 
     initFirebase() {
@@ -88,6 +98,7 @@ class DianaMoodTracker {
                 if (this.connected) {
                     this.loadFromFirebase('threats');
                     this.loadFromFirebase('offenses');
+                    this.loadFromFirebase('nerves');
                 }
             });
 
@@ -111,10 +122,14 @@ class DianaMoodTracker {
                 this.threats = items;
                 this.saveLocalData('threats', this.threats);
                 this.renderThreats();
-            } else {
+            } else if (type === 'offenses') {
                 this.offenses = items;
                 this.saveLocalData('offenses', this.offenses);
                 this.renderOffenses();
+            } else if (type === 'nerves') {
+                this.nerves = items;
+                this.saveLocalData('nerves', this.nerves);
+                this.renderNerves();
             }
         }, (error) => {
             console.error(`Ошибка чтения ${type}:`, error);
@@ -342,6 +357,98 @@ class DianaMoodTracker {
         `).join('');
     }
 
+    // === НЕРВЫ ===
+    async addNerves() {
+        const dateInput = document.getElementById('nervesDate');
+        const textInput = document.getElementById('nervesText');
+        const btn = document.getElementById('btnAddNerves');
+
+        const date = dateInput.value;
+        const text = textInput.value.trim();
+
+        if (!date || !text) {
+            this.shakeElement(textInput);
+            return;
+        }
+
+        const item = {
+            date: date,
+            text: text,
+            createdAt: new Date().toISOString()
+        };
+
+        btn.disabled = true;
+
+        try {
+            if (this.db && this.connected) {
+                await this.db.ref('nerves').push(item);
+            } else {
+                item.id = Date.now().toString();
+                this.nerves.unshift(item);
+                this.saveLocalData('nerves', this.nerves);
+                this.renderNerves();
+            }
+            
+            textInput.value = '';
+            this.showSuccessAnimation(btn);
+
+        } catch (error) {
+            console.error('Ошибка сохранения пытки:', error);
+            item.id = Date.now().toString();
+            this.nerves.unshift(item);
+            this.saveLocalData('nerves', this.nerves);
+            this.renderNerves();
+        }
+
+        btn.disabled = false;
+    }
+
+    async deleteNerves(id) {
+        if (!confirm('Точно удалить эту попытку? 😊')) return;
+
+        try {
+            if (this.db && this.connected) {
+                await this.db.ref(`nerves/${id}`).remove();
+            } else {
+                this.nerves = this.nerves.filter(t => t.id !== id);
+                this.saveLocalData('nerves', this.nerves);
+                this.renderNerves();
+            }
+        } catch (error) {
+            console.error('Ошибка удаления пытки:', error);
+            this.nerves = this.nerves.filter(t => t.id !== id);
+            this.saveLocalData('nerves', this.nerves);
+            this.renderNerves();
+        }
+    }
+
+    renderNerves() {
+        const listEl = document.getElementById('nervesList');
+        const emptyState = document.getElementById('nervesEmpty');
+        const countEl = document.getElementById('nervesCount');
+
+        const count = this.nerves.length;
+        countEl.textContent = `${count} ${this.getWord(count, 'попытка')}`;
+
+        if (count === 0) {
+            emptyState.classList.add('show');
+            listEl.innerHTML = '';
+            return;
+        }
+
+        emptyState.classList.remove('show');
+
+        listEl.innerHTML = this.nerves.map(item => `
+            <div class="item-card nerves" data-id="${item.id}">
+                <div class="item-header">
+                    <span class="item-date">📅 ${this.formatDate(item.date)}</span>
+                    <button class="btn-delete" onclick="app.deleteNerves('${item.id}')" title="Удалить">🗑️</button>
+                </div>
+                <div class="item-text">"${this.escapeHtml(item.text)}"</div>
+            </div>
+        `).join('');
+    }
+
     // === УТИЛИТЫ ===
     formatDate(dateStr) {
         const date = new Date(dateStr);
@@ -355,7 +462,8 @@ class DianaMoodTracker {
     getWord(count, base) {
         const forms = {
             'угроза': ['угроза', 'угрозы', 'угроз'],
-            'обида': ['обида', 'обиды', 'обид']
+            'обида': ['обида', 'обиды', 'обид'],
+            'попытка': ['попытка', 'попытки', 'попыток']
         };
         
         const f = forms[base] || [base, base, base];

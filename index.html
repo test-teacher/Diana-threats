@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Угрозы и Обиды от Дианы 😈</title>
+    <title>Диана и её настроение 😈</title>
     <link rel="stylesheet" href="style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -14,7 +14,7 @@
         <header>
             <div class="header-content">
                 <h1>🔥 Диана и её настроение 🔥</h1>
-                <p class="subtitle">Угрозы, обиды и прочие радости жизни</p>
+                <p class="subtitle">Угрозы, обиды и попытки играть на нервах</p>
             </div>
             <div class="sync-status" id="syncStatus">
                 <span class="sync-dot"></span>
@@ -31,6 +31,10 @@
             <button class="tab" data-tab="offenses">
                 <span class="tab-icon">😢</span>
                 <span class="tab-text">Обиды</span>
+            </button>
+            <button class="tab" data-tab="nerves">
+                <span class="tab-icon">🤯</span>
+                <span class="tab-text">Нервы</span>
             </button>
         </div>
 
@@ -99,6 +103,40 @@
                         <div class="empty-icon">😊</div>
                         <p>Пока нет ни одной обиды...</p>
                         <p class="empty-hint">Странно, обычно их много!</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Секция нервов -->
+            <section class="content-section hidden" id="nerves-section">
+                <div class="add-section">
+                    <h2>📝 Добавить попытку играть на нервах</h2>
+                    <form id="nervesForm">
+                        <div class="form-group">
+                            <label for="nervesDate">📅 Дата попытки:</label>
+                            <input type="date" id="nervesDate" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="nervesText">🤯 Описание пытки:</label>
+                            <textarea id="nervesText" placeholder="Например: 'Молча смотрела на него 10 минут без причины...'" required></textarea>
+                        </div>
+                        <button type="submit" class="btn-add btn-nerves" id="btnAddNerves">
+                            <span class="btn-icon">➕</span>
+                            <span class="btn-text">Добавить пытку</span>
+                        </button>
+                    </form>
+                </div>
+
+                <div class="list-section">
+                    <div class="section-header">
+                        <h2>🤯 Коллекция пыток</h2>
+                        <span class="count-badge nerves-badge" id="nervesCount">0 попыток</span>
+                    </div>
+                    <div class="items-list" id="nervesList"></div>
+                    <div class="empty-state" id="nervesEmpty">
+                        <div class="empty-icon">😌</div>
+                        <p>Пока никто не играл на нервах...</p>
+                        <p class="empty-hint">Это ненадолго!</p>
                     </div>
                 </div>
             </section>
